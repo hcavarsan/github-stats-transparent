@@ -287,12 +287,16 @@ class Stats(object):
                  session: aiohttp.ClientSession,
                  exclude_repos: Optional[Set] = None,
                  exclude_langs: Optional[Set] = None,
-                 consider_forked_repos: bool = False):
+                 consider_forked_repos: bool = False,
+                 contributions_token: Optional[str] = None):
         self.username = username
         self._exclude_repos = set() if exclude_repos is None else exclude_repos
         self._exclude_langs = set() if exclude_langs is None else exclude_langs
         self._consider_forked_repos = consider_forked_repos
         self.queries = Queries(username, access_token, session)
+        # read:user token: the only kind that sees private contribution counts
+        self.contrib_queries = (Queries(username, contributions_token, session)
+                                if contributions_token else self.queries)
 
         self._name = None
         self._stargazers = None
@@ -571,7 +575,13 @@ Languages:
             return self._rank_info
         viewer = ((await self.queries.query(Queries.rank_info()))
                   .get("data", {}).get("viewer", {}))
-        contribs = viewer.get("contributionsCollection", {})
+        contrib_viewer = viewer
+        if self.contrib_queries is not self.queries:
+            # falls back to the main token if this one expired or was revoked
+            contrib_viewer = ((await self.contrib_queries.query(
+                Queries.rank_info())).get("data", {}).get("viewer", {})
+                or viewer)
+        contribs = contrib_viewer.get("contributionsCollection", {})
         self._rank_info = {
             "commits": contribs.get("totalCommitContributions", 0),
             "reviews": contribs.get("totalPullRequestReviewContributions", 0),
