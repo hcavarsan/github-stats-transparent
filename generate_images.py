@@ -6,7 +6,7 @@ import re
 
 import aiohttp
 
-from github_stats import Stats
+from github_stats import Stats, calculate_rank
 
 
 ################################################################################
@@ -42,6 +42,16 @@ async def generate_overview(s: Stats) -> None:
     output = re.sub("{{ lines_changed }}", f"{changed:,}", output)
     output = re.sub("{{ views }}", f"{await s.views:,}", output)
     output = re.sub("{{ repos }}", f"{len(await s.all_repos):,}", output)
+    info = await s.rank_info
+    for key in ("commits", "prs", "issues", "contributed_to"):
+        output = re.sub(f"{{{{ {key} }}}}", f"{info[key]:,}", output)
+    level, percentile = calculate_rank(
+        info["commits"], info["prs"], info["issues"], info["reviews"],
+        await s.stargazers, info["followers"])
+    output = re.sub("{{ rank }}", level, output)
+    # ring length 2*pi*40; the filled arc is (100 - percentile)%
+    output = re.sub("{{ rank_offset }}", f"{251.327 * percentile / 100:.3f}",
+                    output)
 
     generate_output_folder()
     with open("generated/overview.svg", "w") as f:

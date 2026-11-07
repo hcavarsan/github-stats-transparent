@@ -38,16 +38,6 @@ jobs:
         EXCLUDED_LANGS: ${{ secrets.EXCLUDED_LANGS }}
         COUNT_STATS_FROM_FORKS: ${{ secrets.COUNT_STATS_FROM_FORKS }}
 
-    # Rank card (A+, S, ...) from github-readme-stats
-    - name: Generate rank card
-      uses: stats-organization/github-readme-stats-action@2c498845f71017821efaad14293ebc736156ef21 # v2.1.0
-      with:
-        card: stats
-        options: username=${{ github.repository_owner }}&show_icons=true&theme=transparent
-        path: generated/stats.svg
-        token: ${{ secrets.ACCESS_TOKEN }}
-        fail_on_error: "true"
-
     # Publish only generated/ to the orphan `output` branch
     - name: Commit to the output branch of repo
       env:

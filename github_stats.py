@@ -220,6 +220,64 @@ query {{
 }}
 """
 
+    @staticmethod
+    def rank_info() -> str:
+        """
+        :return: GraphQL query with the inputs of the github-readme-stats rank
+        """
+        return """
+query {
+  viewer {
+    contributionsCollection {
+      totalCommitContributions
+      totalPullRequestReviewContributions
+    }
+    repositoriesContributedTo(
+      first: 1
+      contributionTypes: [COMMIT, ISSUE, PULL_REQUEST, REPOSITORY]
+    ) {
+      totalCount
+    }
+    pullRequests(first: 1) {
+      totalCount
+    }
+    issues(states: [OPEN, CLOSED]) {
+      totalCount
+    }
+    followers {
+      totalCount
+    }
+  }
+}
+"""
+
+
+def calculate_rank(commits: int, prs: int, issues: int, reviews: int,
+                   stars: int, followers: int) -> Tuple[str, float]:
+    """
+    Port of calculateRank from github-readme-stats (last-year commits mode)
+    :return: rank level (e.g. "A+") and percentile (lower is better)
+    """
+    def exponential_cdf(x: float) -> float:
+        return 1 - 2 ** -x
+
+    def log_normal_cdf(x: float) -> float:
+        return x / (1 + x)
+
+    weighted = [
+        (2, exponential_cdf(commits / 250)),
+        (3, exponential_cdf(prs / 50)),
+        (1, exponential_cdf(issues / 25)),
+        (1, exponential_cdf(reviews / 2)),
+        (4, log_normal_cdf(stars / 50)),
+        (1, log_normal_cdf(followers / 10)),
+    ]
+    rank = 1 - sum(w * v for w, v in weighted) / sum(w for w, _ in weighted)
+    thresholds = [1, 12.5, 25, 37.5, 50, 62.5, 75, 87.5, 100]
+    levels = ["S", "A+", "A", "A-", "B+", "B", "B-", "C+", "C"]
+    level = next(l for t, l in zip(thresholds, levels) if rank * 100 <= t)
+    return level, rank * 100
+
 
 class Stats(object):
     """
@@ -243,7 +301,8 @@ class Stats(object):
         self._languages = None
         self._repos = None
         self._lines_changed = None
-        self._views = None        
+        self._views = None
+        self._rank_info = None
 
     async def to_str(self) -> str:
         """
@@ -501,6 +560,28 @@ Languages:
 
         self._views = total
         return total
+
+    @property
+    async def rank_info(self) -> Dict[str, int]:
+        """
+        :return: last-year commits and reviews, total PRs, issues, followers
+                 and repos contributed to (last year)
+        """
+        if self._rank_info is not None:
+            return self._rank_info
+        viewer = ((await self.queries.query(Queries.rank_info()))
+                  .get("data", {}).get("viewer", {}))
+        contribs = viewer.get("contributionsCollection", {})
+        self._rank_info = {
+            "commits": contribs.get("totalCommitContributions", 0),
+            "reviews": contribs.get("totalPullRequestReviewContributions", 0),
+            "prs": viewer.get("pullRequests", {}).get("totalCount", 0),
+            "issues": viewer.get("issues", {}).get("totalCount", 0),
+            "followers": viewer.get("followers", {}).get("totalCount", 0),
+            "contributed_to": (viewer.get("repositoriesContributedTo", {})
+                               .get("totalCount", 0)),
+        }
+        return self._rank_info
 
 
 ###############################################################################
